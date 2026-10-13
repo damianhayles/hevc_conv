@@ -93,7 +93,7 @@ conv_to_hevc() {
 	local temp="${2%.*}.part.${2##*.}"
 	rm -f "$temp"
 	
-	duration=$(ffprobe -v error \
+	local duration=$(ffprobe -v error \
 		-select_streams v:0 \
 		-show_entries format=duration \
 		-of csv=p=0 "$1")
