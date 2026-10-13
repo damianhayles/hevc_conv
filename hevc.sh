@@ -294,6 +294,11 @@ dir_scan() {
 	done < "$1"
 }
 
+if [ "$#" -ne 2 ]; then
+	echo "Usage: $0 <directory_list_file> <skip_list_file>"
+	exit 1
+fi
+
 touch "$1"
 touch "$2"
 
