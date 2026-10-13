@@ -213,6 +213,7 @@ size_comp() {
 			if ! rm -f -- "$1"; then
 				echo "Failed to delete file: $1"
 				return 1
+			fi
 		fi
 	else
 		echo
