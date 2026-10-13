@@ -97,7 +97,8 @@ conv_to_hevc() {
 	local temp="${2%.*}.part.${2##*.}"
 	rm -f "$temp"
 	
-	local duration=$(ffprobe -v error \
+	local duration
+	duration=$(ffprobe -v error \
 		-select_streams v:0 \
 		-show_entries format=duration \
 		-of csv=p=0 "$1")
@@ -264,7 +265,10 @@ dir_scan() {
 				[ "$codec" = "vc1" ] || \
 				[ "$codec" = "vp8" ] || \
 				[ "$codec" = "theora" ]; then
-					if [ "${file##.*}" = ".avi" || "${file##.*}" = ".webm" || "${file##.*}" = ".qt" ]; then
+
+					local ext="${file##*.}"
+					ext="${ext,,}" # convert to lowercase
+					if [[ "$ext" = ".avi" || "$ext" = ".webm" || "$ext" = ".qt" ]]; then
 						output="${file%.*}_hevc.mp4"
 					else
 						output="${file%.*}_hevc.${file##*.}"
