@@ -6,47 +6,16 @@ set -o pipefail
 # Usage: ./hevc.sh <directory_list_file> <skip_list_file>
 
 
-# Function to convert a video to HEVC format
-# Arguments:
-#   $1 - Input video file path
-#   $2 - Output video file path
-# Returns:
-#   0 - Success
-#   1 - Failure
-conv_to_hevc() {
-	echo
-	echo "Converting: $1"
-	echo "        To: $2"
-	
-	# Create a temporary output file name
-	# with a .part extension to avoid overwriting the original file in case of failure
-	local temp="${2%.*}.part.${2##*.}"
-	local duration
-	local progress
-	local curr_time
-	local fps
-	local speed
-	local size
-	
-	rm -f "$temp"
-	
-	duration=$(ffprobe -v error \
-		-select_streams v:0 \
-		-show_entries format=duration \
-		-of csv=p=0 "$1")
+show_progress() {
+	local operation="$1"
+	local duration="$2"
 
-	# Convert the video to HEVC format using ffmpeg
-	if ! ffmpeg -nostdin -n -i "$1" \
-	    -map 0 \
-	    -c:v libx265 \
-	    -crf 20 \
-	    -preset medium \
-	    -c:a copy \
-	    -c:s copy \
-		-progress pipe:1 \
-		-nostats \
-	    "$temp" 2>/dev/null |
-		while IFS='=' read -r key value; do
+	local progress="0.00" curr_time=0 curr_h=0 curr_m=0 curr_s=0
+	local dur_int=0 dur_h=0 dur_m=0 dur_s=0
+	local fps="-" speed="-" size=0 size_fmt="0 B"
+	local key value
+
+	while IFS='=' read -r key value; do
 			# Process the progress information from ffmpeg
 			case "$key" in
 				out_time_us)
@@ -55,16 +24,21 @@ conv_to_hevc() {
 				
 					progress=$(awk -v curr="$curr_time" \
 								-v dur="$duration" \
-								'BEGIN { printf "%.2f", (curr / dur) * 100 }')
-
+								'BEGIN {
+									if (dur > 0) {
+										printf "%.2f", (curr / dur) * 100
+									} else {
+										printf "0.00"
+									}
+								}')
 
 					curr_h=$((curr_time / 3600))
-					curr_m=$(( (curr_time % 3600) / 60 ))
+					curr_m=$(((curr_time % 3600) / 60 ))
 					curr_s=$((curr_time % 60))
 
 					dur_int=${duration%.*}
 					dur_h=$((dur_int / 3600))
-					dur_m=$(( (dur_int % 3600) / 60 ))
+					dur_m=$(((dur_int % 3600) / 60 ))
 					dur_s=$((dur_int % 60))
 
 					# Format the size in a human-readable format
@@ -89,7 +63,8 @@ conv_to_hevc() {
 					;;
 				progress)
 					# When ffmpeg reports progress, print the current status
-					printf "\r\033[KProgress: %s%% | Time: %02d:%02d:%02d / %02d:%02d:%02d | FPS: %s | Speed: %s | Size: %s" \
+					printf "\r\033[K%s: %s%% | Time: %02d:%02d:%02d / %02d:%02d:%02d | FPS: %s | Speed: %s | Size: %s" \
+					"$operation" \
 					"$progress" \
 					"$curr_h" "$curr_m" "$curr_s" \
 					"$dur_h" "$dur_m" "$dur_s" \
@@ -98,7 +73,49 @@ conv_to_hevc() {
 					"$size_fmt"
 			esac
 			
-		done; then
+		done;
+}
+
+# Function to convert a video to HEVC format
+# Arguments:
+#   $1 - Input video file path
+#   $2 - Output video file path
+# Returns:
+#   0 - Success
+#   1 - Failure
+conv_to_hevc() {
+	echo
+	echo "Converting: $1"
+	echo "        To: $2"
+	
+	# Create a temporary output file name
+	# with a .part extension to avoid overwriting the original file in case of failure
+	local temp="${2%.*}.part.${2##*.}"
+	rm -f "$temp"
+	
+	duration=$(ffprobe -v error \
+		-select_streams v:0 \
+		-show_entries format=duration \
+		-of csv=p=0 "$1")
+
+	if [[ -z "$duration" || ! "$duration" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+		echo "Invalid video duration: $duration"
+		return 1
+	fi
+
+	# Convert the video to HEVC format using ffmpeg
+	if ! ffmpeg -nostdin -n -i "$1" \
+	    -map 0 \
+	    -c:v libx265 \
+	    -crf 20 \
+	    -preset medium \
+	    -c:a copy \
+	    -c:s copy \
+		-progress pipe:1 \
+		-nostats \
+	    "$temp" 2>/dev/null |
+		show_progress "Converting" "$duration"; then
+
 			echo
 			echo "Conversion failed: $1"
 			rm -f "$temp"
@@ -125,11 +142,25 @@ conv_to_hevc() {
 #   0 - Valid
 #   1 - Invalid
 video_validate() {
+	local duration
+	duration=$(ffprobe -v error \
+		-select_streams v:0 \
+		-show_entries format=duration \
+		-of csv=p=0 "$1")
+
+	if [[ -z "$duration" || ! "$duration" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+		echo "Invalid video duration: $duration"
+		return 1
+	fi
+
 	if ! ffmpeg -nostdin -v error -xerror \
 		-i "$1" \
-		-map 0:v:0 \
-		-f null - >/dev/null; then
-	
+		-map 0:v -map 0:a? \
+		-f null - \
+		-progress pipe:1 \
+		-nostats 2>/dev/null |
+		show_progress "Verifying" "$duration"; then
+
 		echo
 		echo "Video failed validation: $1"
 		return 1
@@ -139,6 +170,7 @@ video_validate() {
 	echo "Video passed validation: $1"
 	return 0
 }
+
 
 # Function to compare the sizes of the original and HEVC converted files
 # Arguments:
