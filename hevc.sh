@@ -5,7 +5,10 @@ set -o pipefail
 # Bash script to convert videos to HEVC format using ffmpeg and ffprobe.
 # Usage: ./hevc.sh <directory_list_file> <skip_list_file>
 
-
+# Function to display progress of ffmpeg operations
+# Arguments:
+#   $1 - Operation name (e.g., "Converting", "Verifying")
+#   $2 - Total duration of the video in seconds
 show_progress() {
 	local operation="$1"
 	local duration="$2"
@@ -14,6 +17,12 @@ show_progress() {
 	local dur_int=0 dur_h=0 dur_m=0 dur_s=0
 	local fps="-" speed="-" size=0 size_fmt="0 B"
 	local key value
+
+	# calculate video duration
+	dur_int=${duration%.*}
+	dur_h=$((dur_int / 3600))
+	dur_m=$(((dur_int % 3600) / 60 ))
+	dur_s=$((dur_int % 60))
 
 	while IFS='=' read -r key value; do
 			# Process the progress information from ffmpeg
@@ -35,12 +44,17 @@ show_progress() {
 					curr_h=$((curr_time / 3600))
 					curr_m=$(((curr_time % 3600) / 60 ))
 					curr_s=$((curr_time % 60))
-
-					dur_int=${duration%.*}
-					dur_h=$((dur_int / 3600))
-					dur_m=$(((dur_int % 3600) / 60 ))
-					dur_s=$((dur_int % 60))
-
+					;;
+				fps)
+					fps="$value"
+					;;
+				speed)
+					speed="$value"
+					;;
+				total_size)
+					[[ "$value" =~ ^[0-9]+$ ]] && size="$value"
+					;;
+				progress)
 					# Format the size in a human-readable format
 					if [ "${size:-0}" -ge 1073741824 ]; then
 						size_fmt=$(awk -v s="$size" 'BEGIN { printf "%.2f GB", s / 1073741824 }')
@@ -51,17 +65,7 @@ show_progress() {
 					else
 						size_fmt="${size:-0} B"
 					fi
-					;;
-				fps)
-					fps="$value"
-					;;
-				speed)
-					speed="$value"
-					;;
-				total_size)
-					size="$value"
-					;;
-				progress)
+
 					# When ffmpeg reports progress, print the current status
 					printf "\r\033[K%s: %s%% | Time: %02d:%02d:%02d / %02d:%02d:%02d | FPS: %s | Speed: %s | Size: %s" \
 					"$operation" \
@@ -155,7 +159,7 @@ video_validate() {
 
 	if ! ffmpeg -nostdin -v error -xerror \
 		-i "$1" \
-		-map 0:v -map 0:a? \
+		-map 0:v -map 0:a? -map 0:s? \
 		-f null - \
 		-progress pipe:1 \
 		-nostats 2>/dev/null |
@@ -177,29 +181,50 @@ video_validate() {
 #   $1 - Original video file path
 #   $2 - HEVC converted video file path
 #   $3 - Skip list file path
+# Returns:
+#   0 - Success
+#   1 - Failure
 size_comp() {
-	local h264size=$(stat -c%s "$1")
-	local hevcsize=$(stat -c%s "$2")
+	local h264size hevcsize
+
+	if ! h264size=$(stat -c%s "$1") ||
+	   ! hevcsize=$(stat -c%s "$2"); then
+		echo "Error: Failed to get file sizes for comparison. Default to keeping original."
+		if rm -f -- "$2"; then
+			echo "Deleted HEVC version of $1 due to size comparison error."
+		else
+			echo "Failed to delete HEVC version of $1 after size comparison error."
+		fi
+		return 1
+	fi
 
 	if [ "$h264size" -gt "$hevcsize" ]; then
 		# verify that the HEVC file is valid before deleting the original
 		if ! video_validate "$2"; then
 			echo
 			echo "HEVC version of $1 is smaller, but is corrupted, keeping original..."
-			rm -f -- "$2"
+			if ! rm -f -- "$2"; then
+				echo "Failed to delete file: $2"
+				return 1
+			fi
 		else
 			echo
 			echo "HEVC version of $1 is smaller, deleting original..."
-			rm -f -- "$1"
-			echo "Deleted."
+			if ! rm -f -- "$1"; then
+				echo "Failed to delete file: $1"
+				return 1
 		fi
 	else
 		echo
 		echo "Original file ($1) is smaller, deleting hevc version..."
-		rm -f -- "$2"
+		if ! rm -f -- "$2"; then
+			echo "Failed to delete file: $2"
+			return 1
+		fi
 		echo "$1" >> "$3"
-		echo "Deleted."
 	fi
+	echo "Deleted."
+	return 0
 }
 
 # Function to scan directories for video files and convert them to HEVC format
@@ -238,8 +263,11 @@ dir_scan() {
 				[ "$codec" = "vc1" ] || \
 				[ "$codec" = "vp8" ] || \
 				[ "$codec" = "theora" ]; then
-					
-					output="${file%.*}_hevc.mp4"
+					if [ "${file##.*}" = ".avi" || "${file##.*}" = ".webm" || "${file##.*}" = ".qt" ]; then
+						output="${file%.*}_hevc.mp4"
+					else
+						output="${file%.*}_hevc.${file##*.}"
+					fi
 					
 					if [ -f "$output" ]; then
 						if ! video_validate "$output"; then
