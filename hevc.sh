@@ -1,4 +1,5 @@
 #!/bin/bash
+set -o pipefail
 
 
 # Bash script to convert videos to HEVC format using ffmpeg and ffprobe.
@@ -49,6 +50,7 @@ conv_to_hevc() {
 			# Process the progress information from ffmpeg
 			case "$key" in
 				out_time_us)
+					[[ "$value" =~ ^[0-9]+$ ]] || continue
 					curr_time=$((value / 1000000))
 				
 					progress=$(awk -v curr="$curr_time" \
@@ -107,7 +109,11 @@ conv_to_hevc() {
 	echo
 	echo "HEVC created."
 	
-	mv "$temp" "$2"
+	if ! mv "$temp" "$2"; then
+		echo "Failed to rename temporary file to final output: $temp -> $2"
+		rm -f "$temp"
+		return 1
+	fi
 	return 0
 		
 }
