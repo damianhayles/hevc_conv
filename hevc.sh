@@ -98,6 +98,11 @@ conv_to_hevc() {
 	# with a .part extension to avoid overwriting the original file in case of failure
 	local temp="${2%.*}.part.${2##*.}"
 	rm -f "$temp"
+	local max_size
+	if ! max_size=$(stat -c%s -- "$1") || [[ ! "$max_size" =~ ^[0-9]+$ ]]; then
+		echo "Failed to get source file size: $1"
+		return 1
+	fi
 	
 	local duration
 	duration=$(ffprobe -v error \
@@ -118,6 +123,7 @@ conv_to_hevc() {
 	    -preset medium \
 	    -c:a copy \
 	    -c:s copy \
+	    -fs "$max_size" \
 		-progress pipe:1 \
 		-nostats \
 	    "$temp" 2>/dev/null |
@@ -129,6 +135,14 @@ conv_to_hevc() {
 			return 1
 
 	fi
+	
+		local output_size
+		if ! output_size=$(stat -c%s -- "$temp") || (( output_size >= max_size )); then
+			echo
+			echo "Converted file exceeded the size of the original and will be deleted."
+			rm -f "$temp"
+			return 1
+		fi
 
 	echo
 	echo "HEVC created."
@@ -183,7 +197,7 @@ video_validate() {
 # Arguments:
 #   $1 - Original video file path
 #   $2 - HEVC converted video file path
-#   $3 - Skip list file path
+#  $3 - Skip list file path
 # Returns:
 #   0 - Success
 #   1 - Failure
