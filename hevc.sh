@@ -67,14 +67,16 @@ show_progress() {
 					fi
 
 					# When ffmpeg reports progress, print the current status
-					printf "\r\033[K%s: %s%% | Time: %02d:%02d:%02d / %02d:%02d:%02d | FPS: %s | Speed: %s | Size: %s" \
+					printf "\r\033[K%s: %s%% | Time: %02d:%02d:%02d / %02d:%02d:%02d | FPS: %s | Speed: %s" \\
 					"$operation" \
 					"$progress" \
 					"$curr_h" "$curr_m" "$curr_s" \
 					"$dur_h" "$dur_m" "$dur_s" \
 					"$fps" \
-					"$speed" \
-					"$size_fmt"
+					"$speed"
+					if [[ "$operation" != "Verifying" ]]; then
+						printf " | Size: %s" "$size_fmt"
+					fi
 			esac
 			
 		done;
@@ -223,6 +225,7 @@ size_comp() {
 			echo "Failed to delete file: $2"
 			return 1
 		fi
+		# Add the original file to the skip list to avoid future conversions
 		echo "$1" >> "$3"
 	fi
 	echo "Deleted."
@@ -278,7 +281,10 @@ dir_scan() {
 						if ! video_validate "$output"; then
 							echo
 							echo "HEVC version of video found but is corrupted."
-							rm -f "$output"
+							if ! rm -f "$output"; then
+								echo "Failed to delete file: $output"
+								continue
+							fi
 						else
 							size_comp "$file" "$output" "$2"
 							continue
