@@ -67,7 +67,7 @@ show_progress() {
 					fi
 
 					# When ffmpeg reports progress, print the current status
-					printf "\r\033[K%s: %s%% | Time: %02d:%02d:%02d / %02d:%02d:%02d | FPS: %s | Speed: %s" \\
+					printf "\r\033[K%s: %s%% | Time: %02d:%02d:%02d / %02d:%02d:%02d | FPS: %s | Speed: %s" \
 					"$operation" \
 					"$progress" \
 					"$curr_h" "$curr_m" "$curr_s" \
@@ -86,6 +86,7 @@ show_progress() {
 # Arguments:
 #   $1 - Input video file path
 #   $2 - Output video file path
+#   $3 - Skip list file path
 # Returns:
 #   0 - Success
 #   1 - Failure
@@ -141,6 +142,8 @@ conv_to_hevc() {
 			echo
 			echo "Converted file exceeded the size of the original and will be deleted."
 			rm -f "$temp"
+			# Add the original file to the skip list to avoid future conversions
+			echo "$1" >> "$3"
 			return 1
 		fi
 
@@ -197,7 +200,7 @@ video_validate() {
 # Arguments:
 #   $1 - Original video file path
 #   $2 - HEVC converted video file path
-#  $3 - Skip list file path
+#   $3 - Skip list file path
 # Returns:
 #   0 - Success
 #   1 - Failure
@@ -305,7 +308,7 @@ dir_scan() {
 						fi
 					fi
 
-						if ! conv_to_hevc "$file" "$output"; then
+						if ! conv_to_hevc "$file" "$output" "$3"; then
 							continue
 						fi
 
