@@ -308,7 +308,7 @@ dir_scan() {
 						fi
 					fi
 
-						if ! conv_to_hevc "$file" "$output" "$3"; then
+						if ! conv_to_hevc "$file" "$output" "$2"; then
 							continue
 						fi
 
