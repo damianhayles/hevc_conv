@@ -184,13 +184,10 @@ video_validate() {
 		-progress pipe:1 \
 		-nostats 2>/dev/null |
 		show_progress "Verifying" "$duration"; then
-
-		echo
 		echo "Video failed validation: $1"
 		return 1
 	fi
 	
-	echo
 	echo "Video passed validation: $1"
 	return 0
 }
@@ -221,14 +218,12 @@ size_comp() {
 	if [ "$h264size" -gt "$hevcsize" ]; then
 		# verify that the HEVC file is valid before deleting the original
 		if ! video_validate "$2"; then
-			echo
 			echo "HEVC version of $1 is smaller, but is corrupted, keeping original..."
 			if ! rm -f -- "$2"; then
 				echo "Failed to delete file: $2"
 				return 1
 			fi
 		else
-			echo
 			echo "HEVC version of $1 is smaller, deleting original..."
 			if ! rm -f -- "$1"; then
 				echo "Failed to delete file: $1"
@@ -236,7 +231,6 @@ size_comp() {
 			fi
 		fi
 	else
-		echo
 		echo "Original file ($1) is smaller, deleting hevc version..."
 		if ! rm -f -- "$2"; then
 			echo "Failed to delete file: $2"
@@ -266,6 +260,7 @@ dir_scan() {
 			-iname '*.mts' -o \
 			-iname '*.m2ts' -o \
 			-iname '*.webm'  -o \
+			-iname '*.mpeg' -o \
 			-iname '*.qt' \
 		\) -print0 |
 		while IFS= read -r -d '' file; do
@@ -296,7 +291,6 @@ dir_scan() {
 					
 					if [ -f "$output" ]; then
 						if ! video_validate "$output"; then
-							echo
 							echo "HEVC version of video found but is corrupted."
 							if ! rm -f "$output"; then
 								echo "Failed to delete file: $output"
