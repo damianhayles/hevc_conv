@@ -3,6 +3,9 @@ set -o pipefail
 
 
 # Bash script to convert videos to HEVC format using ffmpeg and ffprobe.
+# The script is designed to convert videos in folders recursively, and to
+# do so only as long as the resultant video is more compact than the original.
+# The script is designed to delete the original video if conversion does so.
 # Usage: ./hevc.sh <directory_list_file> <skip_list_file>
 
 # Function to display progress of ffmpeg operations
@@ -283,7 +286,7 @@ dir_scan() {
 
 					local ext="${file##*.}"
 					ext="${ext,,}" # convert to lowercase
-					if [[ "$ext" = ".avi" || "$ext" = ".webm" || "$ext" = ".qt" ]]; then
+					if [[ "$ext" = ".avi" || "$ext" = ".webm" || "$ext" = ".m4v" || "$ext" = ".qt" ]]; then
 						output="${file%.*}_hevc.mp4"
 					else
 						output="${file%.*}_hevc.${file##*.}"
