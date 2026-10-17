@@ -109,23 +109,20 @@ delete_file() {
 # and determine if a video should be converted to HEVC
 # Arguments:
 #	$1 - Video file
-#	$2 - Reference to video_streams
-#	$3 - Reference to ffmpeg_args
-#	$4 - Reference to needs_conversion
+#	$2 - Reference to ffmpeg_args
+#	$3 - Reference to needs_conversion
 # Returns:
 #	0 - Success
 #	1 - Failure
 build_ffmpeg_args() {
 	local file="$1"
-	local -n video_streams_ref="$2"
-	local -n ffmpeg_args_ref="$3"
-	local -n needs_conversion_ref="$4"
+	local -n ffmpeg_args_ref="$2"
+	local -n needs_conversion_ref="$3"
 
 	local stream_data
 	local stream_lines
 	local stream_index codec name attached_pic
 
-	video_streams_ref=()
 	ffmpeg_args_ref=(-map 0 -c copy)
 	needs_conversion_ref=0
 
@@ -155,10 +152,6 @@ build_ffmpeg_args() {
 
 	while IFS=$'\t' read -r stream_index codec_name attached_pic; do
 		[[ -n "$stream_index" ]] || continue
-
-		video_streams_ref+=(
-			"$stream_index"$'\t'"$codec_name"$'\t'"$attached_pic"
-		)
 
 		# Only encode ordinary video streams using codecs targeted
 		if [[ "$attached_pic" != "1" ]]; then
@@ -350,7 +343,6 @@ dir_scan() {
 	local dir_list="$1"
 	local skip_list="$2"
 
-	local -a video_streams
 	local -a ffmpeg_args
 	local needs_conversion
 
@@ -380,7 +372,7 @@ dir_scan() {
 				echo "It has most likely been found to be smaller than its HEVC equivalent."
 			else
 				if ! build_ffmpeg_args \
-					"$file" video_streams ffmpeg_args needs_conversion; then
+					"$file" ffmpeg_args needs_conversion; then
 					echo "Skipping file because stream analysis failed: $file"
 					continue
 				fi
