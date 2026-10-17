@@ -85,13 +85,28 @@ show_progress() {
 		done;
 }
 
+# Wrapper for safe file deletion
+# Arguments:
+# 	$1 - File to be deleted
+# Returns:
+#	Exits script if deletion fails
+delete_file() {
+	if ! rm -f -- "$1"; then
+		echo "Failed to delete file: $1"
+		echo "Script will now terminate."
+		exit 0
+	fi
+	echo "Deleted file: $1"
+	echo
+}
+
 # Function to build a list of convertible video streams
 # and determine if a video should be converted to HEVC
 # Arguments:
-#	$1 - video file
-#	$2 - reference to video_streams
-#	$3 - reference to ffmpeg_args
-#	$4 - reference to needs_conversion
+#	$1 - Video file
+#	$2 - Reference to video_streams
+#	$3 - Reference to ffmpeg_args
+#	$4 - Reference to needs_conversion
 # Returns:
 #	0 - Success
 #	1 - Failure
@@ -156,7 +171,6 @@ build_ffmpeg_args() {
 	return 0
 }
 
-
 # Function to convert a video to HEVC format
 # Arguments:
 #   $1 - Input video file path
@@ -181,7 +195,8 @@ conv_to_hevc() {
 	# with a .part extension to avoid overwriting the original file in case of failure
 	local temp="${output%.*}.part.${output##*.}"
 	local error_log="${temp}.log"
-	rm -f -- "$temp" "$error_log"
+	delete_file "$temp"
+	delete_file "$error_log"
 	local max_size
 	if ! max_size=$(stat -c%s -- "$source") || [[ ! "$max_size" =~ ^[0-9]+$ ]]; then
 		echo "Failed to get source file size: $source"
@@ -214,7 +229,8 @@ conv_to_hevc() {
 			echo "FFmpeg error output:"
 			cat -- "$error_log"
 
-			rm -f -- "$temp" "$error_log"
+			delete_file "$temp"
+			delete_file "$error_log"
 			return 1
 	fi
 	
@@ -222,7 +238,8 @@ conv_to_hevc() {
 		if ! output_size=$(stat -c%s -- "$temp") || (( output_size >= max_size )); then
 			echo
 			echo "Converted file exceeded the size of the original and will be deleted."
-			rm -f -- "$temp"
+			delete_file "$temp"
+			delete_file "$error_log"
 			# Add the original file to the skip list to avoid future conversions
 			echo "$source" >> "$skip_list"
 			return 1
@@ -233,11 +250,12 @@ conv_to_hevc() {
 	
 	if ! mv "$temp" "$output"; then
 		echo "Failed to rename temporary file to final output: $temp -> $output"
-		rm -f -- "$temp"
+		delete_file "$temp"
+		delete_file "$error_log"
 		return 1
 	fi
 
-	rm -f -- "$error_log"
+	delete_file "$error_log"
 	return 0
 		
 }
@@ -267,14 +285,15 @@ video_validate() {
 		-progress pipe:1 \
 		-nostats 2>/dev/null |
 		show_progress "Verifying" "$duration"; then
+		echo
 		echo "Video failed validation: $1"
 		return 1
 	fi
 	
+	echo
 	echo "Video passed validation: $1"
 	return 0
 }
-
 
 # Function to compare the sizes of the original and HEVC converted files
 # Arguments:
@@ -295,11 +314,7 @@ size_comp() {
 	if ! h264size=$(stat -c%s "$source") ||
 	   ! hevcsize=$(stat -c%s "$output"); then
 		echo "Error: Failed to get file sizes for comparison. Default to keeping original."
-		if rm -f -- "$output"; then
-			echo "Deleted HEVC version of $1 due to size comparison error."
-		else
-			echo "Failed to delete HEVC version of $1 after size comparison error."
-		fi
+		delete_file "$output"
 		return 1
 	fi
 
@@ -307,28 +322,18 @@ size_comp() {
 		# Verify that the HEVC file is valid before deleting the original
 		if ! video_validate "$output"; then
 			echo "HEVC version of $source is smaller, but is corrupted, keeping original..."
-			if ! rm -f -- "$output"; then
-				echo "Failed to delete file: $output"
-				return 1
-			fi
+			delete_file "$output"
 		else
 			echo "HEVC version of $source is smaller, deleting original..."
-			if ! rm -f -- "$source"; then
-				echo "Failed to delete file: $source"
-				return 1
-			fi
+			delete_file "$source"
 		fi
 	else
 		echo "Original file ($source) is smaller, deleting hevc version..."
-		if ! rm -f -- "$output"; then
-			echo "Failed to delete file: $output"
-			return 1
-		fi
+		delete_file "$output"
 		# Add the original file to the skip list to avoid future conversions
 		echo "$source" >> "$skp_list"
 	fi
 
-	echo "Deleted."
 	return 0
 }
 
@@ -339,6 +344,10 @@ size_comp() {
 dir_scan() {
 	local dir_list="$1"
 	local skip_list="$2"
+
+	local -a video_streams
+	local -a ffmpeg_args
+	local needs_conversion
 
 	while IFS= read -r dir; do
 		echo "Scanning directory $dir for videos to convert to HEVC..."
@@ -362,14 +371,9 @@ dir_scan() {
 		\) -print0 |
 		while IFS= read -r -d '' file; do
 			if grep -Fxq "$file" "$skip_list"; then
-				echo
 				echo "File $file has been marked to be skipped."
 				echo "It has most likely been found to be smaller than its HEVC equivalent."
 			else
-				local -a video_streams
-				local -a ffmpeg_args
-				local needs_conversion
-
 				if ! build_ffmpeg_args \
 					"$file" video_streams ffmpeg_args needs_conversion; then
 					echo "Skipping file because stream analysis failed: $file"
@@ -392,10 +396,7 @@ dir_scan() {
 				if [ -f "$output" ]; then
 					if ! video_validate "$output"; then
 						echo "HEVC version of video found but is corrupted."
-						if ! rm -f -- "$output"; then
-							echo "Failed to delete file: $output"
-							continue
-						fi
+						delete_file "$output"
 					else
 						size_comp "$file" "$output" "$skip_list"
 						continue
@@ -403,6 +404,7 @@ dir_scan() {
 				fi
 
 				if ! conv_to_hevc "$file" "$output" "$skip_list" "${ffmpeg_args[@]}"; then
+					echo
 					continue
 				fi
 
