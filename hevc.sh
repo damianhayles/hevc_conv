@@ -2,10 +2,10 @@
 set -o pipefail
 
 
-# Bash script to convert videos to HEVC format using ffmpeg and ffprobe.
-# The script is designed to convert videos in folders recursively, and to
-# do so only as long as the resultant video is more compact than the original.
-# The script is designed to delete the original video if conversion does so.
+# Bash script to convert videos to HEVC format using FFmpeg and FFprobe.
+# The script recursively searches for videos and deletes the original
+# video only when the converted output is smaller and passes
+# validation.
 # Usage: ./hevc.sh <directory_list_file> <skip_list_file>
 
 # Function to display progress of ffmpeg operations
@@ -21,7 +21,6 @@ show_progress() {
 	local fps="-" speed="-" size=0 size_fmt="0 B"
 	local key value
 
-	# Calculate video duration
 	dur_int=${duration%.*}
 	dur_h=$((dur_int / 3600))
 	dur_m=$(((dur_int % 3600) / 60 ))
@@ -150,6 +149,7 @@ build_ffmpeg_args() {
 		return 1
 	fi
 
+	# Add eligible video streams to list of FFmpeg args 
 	while IFS=$'\t' read -r stream_index codec_name attached_pic; do
 		[[ -n "$stream_index" ]] || continue
 
@@ -174,6 +174,8 @@ build_ffmpeg_args() {
 #   $1 - Input video file path
 #   $2 - Output video file path
 #   $3 - Skip list file path
+# Side Effects:
+#	- Creates a .log file for FFmpeg error message handling
 # Returns:
 #   0 - Success
 #   1 - Failure
@@ -211,7 +213,6 @@ conv_to_hevc() {
 		return 1
 	fi
 
-	# Convert the video to HEVC format using ffmpeg
 	if ! ffmpeg -nostdin -n -i "$source" \
 	    "${ffmpeg_args[@]}" \
 	    -crf 20 \
@@ -228,7 +229,6 @@ conv_to_hevc() {
 			cat -- "$error_log"
 
 			delete_file "$temp"
-			delete_file "$error_log"
 			return 1
 	fi
 	
@@ -258,7 +258,8 @@ conv_to_hevc() {
 		
 }
 
-# Function to validate a video file using ffmpeg
+# Function to verify that a video's video audio and
+# subtitle streams can be decoded by FFmpeg without error
 # Arguments:
 #   $1 - Video file path
 # Returns:
@@ -293,11 +294,16 @@ video_validate() {
 	return 0
 }
 
-# Function to compare the sizes of the original and HEVC converted files
+# Function to compare the sizes of the original and converted files,
+# deleting the converted file if it is not smaller or fails validation;
+# otherwise deleting the original.
 # Arguments:
 #   $1 - Original video file path
 #   $2 - HEVC converted video file path
 #   $3 - Skip list file path
+# Side Effects:
+#	- May delete either input file
+#	- May append the original video file path to the skip list
 # Returns:
 #   0 - Success
 #   1 - Failure
@@ -329,7 +335,7 @@ size_comp() {
 		echo "Original file ($source) is smaller, deleting hevc version..."
 		delete_file "$output"
 		# Add the original file to the skip list to avoid future conversions
-		echo "$source" >> "$skp_list"
+		echo "$source" >> "$skip_list"
 	fi
 
 	return 0
