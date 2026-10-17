@@ -8,22 +8,45 @@ set -o pipefail
 # validation.
 # Usage: ./hevc.sh <directory_list_file> <skip_list_file>
 
-# Function to display progress of ffmpeg operations
+# Function to format a file size in bytes as human readable string
+# Arguments:
+#	$1 - File size in bytes
+#	$2 - Name of variable to receive formatted string
+format_size() {
+	local size="$1"
+	local -n size_fmt="$2"
+
+	if [ "${size:-0}" -ge 1073741824 ]; then
+		size_fmt=$(awk -v s="$size" 'BEGIN { printf "%.2f GB", s / 1073741824 }')
+	elif [ "${size:-0}" -ge 1048576 ]; then
+		size_fmt=$(awk -v s="$size" 'BEGIN { printf "%.2f MB", s / 1048576 }')
+	elif [ "${size:-0}" -ge 1024 ]; then
+		size_fmt=$(awk -v s="$size" 'BEGIN { printf "%.2f KB", s / 1024 }')
+	else
+		size_fmt="${size:-0} B"
+	fi
+}
+
+# Function to display progress of FFmpeg operations
 # Arguments:
 #   $1 - Operation name (e.g., "Converting", "Verifying")
 #   $2 - Total duration of the video in seconds
+#	$3 - Original file size in bytes (optional)
 show_progress() {
 	local operation="$1"
 	local duration="$2"
+	local original_file_size="$3"
 
 	local progress="0.00" curr_time=0 curr_h=0 curr_m=0 curr_s=0
 	local dur_int=0 dur_h=0 dur_m=0 dur_s=0
-	local fps="-" speed="-" size=0 size_fmt="0 B"
+	local fps="-" speed="-" size=0 size_fmt="0 B" original_size_fmt="0 B"
 	local key value
+
+	format_size "$original_file_size" "$original_size_fmt"
 
 	dur_int=${duration%.*}
 	dur_h=$((dur_int / 3600))
-	dur_m=$(((dur_int % 3600) / 60 ))
+	dur_m=$(((dur_int % 3600) / 60))
 	dur_s=$((dur_int % 60))
 
 	while IFS='=' read -r key value; do
@@ -44,7 +67,7 @@ show_progress() {
 								}')
 
 					curr_h=$((curr_time / 3600))
-					curr_m=$(((curr_time % 3600) / 60 ))
+					curr_m=$(((curr_time % 3600) / 60))
 					curr_s=$((curr_time % 60))
 					;;
 				fps)
@@ -57,16 +80,7 @@ show_progress() {
 					[[ "$value" =~ ^[0-9]+$ ]] && size="$value"
 					;;
 				progress)
-					# Format the size in a human-readable format
-					if [ "${size:-0}" -ge 1073741824 ]; then
-						size_fmt=$(awk -v s="$size" 'BEGIN { printf "%.2f GB", s / 1073741824 }')
-					elif [ "${size:-0}" -ge 1048576 ]; then
-						size_fmt=$(awk -v s="$size" 'BEGIN { printf "%.2f MB", s / 1048576 }')
-					elif [ "${size:-0}" -ge 1024 ]; then
-						size_fmt=$(awk -v s="$size" 'BEGIN { printf "%.2f KB", s / 1024 }')
-					else
-						size_fmt="${size:-0} B"
-					fi
+					format_size "$size" "$size_fmt"
 
 					# When ffmpeg reports progress, print the current status
 					printf "\r\033[K%s: %s%% | Time: %02d:%02d:%02d / %02d:%02d:%02d | FPS: %s | Speed: %s" \
@@ -77,7 +91,7 @@ show_progress() {
 					"$fps" \
 					"$speed"
 					if [[ "$operation" != "Verifying" ]]; then
-						printf " | Size: %s" "$size_fmt"
+						printf " | Size: %s / %s" "$size_fmt" "$original_size_fmt"
 					fi
 			esac
 			
@@ -221,7 +235,7 @@ conv_to_hevc() {
 		-progress pipe:1 \
 		-nostats \
 	    "$temp" 2>"$error_log" |
-		show_progress "Converting" "$duration"; then
+		show_progress "Converting" "$duration" "$max_size"; then
 
 			echo
 			echo "Conversion failed: $source"
