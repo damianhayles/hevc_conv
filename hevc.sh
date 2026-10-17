@@ -91,13 +91,18 @@ show_progress() {
 # Returns:
 #	Exits script if deletion fails
 delete_file() {
-	if ! rm -f -- "$1"; then
-		echo "Failed to delete file: $1"
-		echo "Script will now terminate."
-		exit 0
+	local error
+
+	if error=$(rm -f -- "$1" 2>&1); then
+		echo "Deleted file: $1"
+		echo
+	else
+		echo "Failed to delete file: $1" >&2
+		echo "Reason: $error" >&2
+		echo "Script will now terminate." >&2
+		exit 1
 	fi
-	echo "Deleted file: $1"
-	echo
+
 }
 
 # Function to build a list of convertible video streams
