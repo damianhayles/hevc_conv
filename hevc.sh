@@ -14,16 +14,16 @@ set -o pipefail
 #	$2 - Name of variable to receive formatted string
 format_size() {
 	local size="$1"
-	local -n size_fmt="$2"
+	local -n size_fmt_ref="$2"
 
 	if [ "${size:-0}" -ge 1073741824 ]; then
-		size_fmt=$(awk -v s="$size" 'BEGIN { printf "%.2f GB", s / 1073741824 }')
+		size_fmt_ref=$(awk -v s="$size" 'BEGIN { printf "%.2f GB", s / 1073741824 }')
 	elif [ "${size:-0}" -ge 1048576 ]; then
-		size_fmt=$(awk -v s="$size" 'BEGIN { printf "%.2f MB", s / 1048576 }')
+		size_fmt_ref=$(awk -v s="$size" 'BEGIN { printf "%.2f MB", s / 1048576 }')
 	elif [ "${size:-0}" -ge 1024 ]; then
-		size_fmt=$(awk -v s="$size" 'BEGIN { printf "%.2f KB", s / 1024 }')
+		size_fmt_ref=$(awk -v s="$size" 'BEGIN { printf "%.2f KB", s / 1024 }')
 	else
-		size_fmt="${size:-0} B"
+		size_fmt_ref="${size:-0} B"
 	fi
 }
 
@@ -42,7 +42,7 @@ show_progress() {
 	local fps="-" speed="-" size=0 size_fmt="0 B" original_size_fmt="0 B"
 	local key value
 
-	format_size "$original_file_size" "$original_size_fmt"
+	format_size "$original_file_size" original_size_fmt
 
 	dur_int=${duration%.*}
 	dur_h=$((dur_int / 3600))
@@ -80,7 +80,7 @@ show_progress() {
 					[[ "$value" =~ ^[0-9]+$ ]] && size="$value"
 					;;
 				progress)
-					format_size "$size" "$size_fmt"
+					format_size "$size" size_fmt
 
 					# When ffmpeg reports progress, print the current status
 					printf "\r\033[K%s: %s%% | Time: %02d:%02d:%02d / %02d:%02d:%02d | FPS: %s | Speed: %s" \
@@ -209,8 +209,10 @@ conv_to_hevc() {
 	# with a .part extension to avoid overwriting the original file in case of failure
 	local temp="${output%.*}.part.${output##*.}"
 	local error_log="${temp}.log"
-	delete_file "$temp"
-	delete_file "$error_log"
+
+	[[ -e "$temp" ]] && delete_file "$temp"
+	[[ -e "$error_log" ]] && delete_file "$error_log"
+
 	local max_size
 	if ! max_size=$(stat -c%s -- "$source") || [[ ! "$max_size" =~ ^[0-9]+$ ]]; then
 		echo "Failed to get source file size: $source"
@@ -294,9 +296,9 @@ video_validate() {
 	if ! ffmpeg -nostdin -v error -xerror \
 		-i "$1" \
 		-map 0:v -map 0:a? -map 0:s? \
-		-f null - \
 		-progress pipe:1 \
-		-nostats 2>/dev/null |
+		-nostats \
+		-f null - 2>/dev/null |
 		show_progress "Verifying" "$duration"; then
 		echo
 		echo "Video failed validation: $1"
